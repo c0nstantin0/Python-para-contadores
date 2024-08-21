@@ -1,0 +1,134 @@
+import sqlite3
+from datetime import datetime
+import csv
+import tkinter as tk
+from tkinter import messagebox, simpledialog, filedialog
+
+# Conectar ao banco de dados SQLite
+conn = sqlite3.connect('contabilidade.db')
+cursor = conn.cursor()
+
+# Criar tabelas se não existirem
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS categorias (
+        id INTEGER PRIMARY KEY,
+        nome TEXT NOT NULL
+    )
+''')
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS transacoes (
+        id INTEGER PRIMARY KEY,
+        tipo TEXT NOT NULL,
+        descricao TEXT NOT NULL,
+        valor REAL NOT NULL,
+        categoria TEXT,
+        data TEXT NOT NULL
+    )
+''')
+conn.commit()
+
+# Funções do Sistema
+def registrar_transacao(tipo, descricao, valor, categoria):
+    data = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute('''
+        INSERT INTO transacoes (tipo, descricao, valor, categoria, data)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (tipo, descricao, valor, categoria, data))
+    conn.commit()
+    messagebox.showinfo("Sucesso", "Transação registrada com sucesso!")
+
+def visualizar_transacoes(tipo=None, inicio=None, fim=None):
+    query = 'SELECT * FROM transacoes WHERE 1=1'
+    params = []
+
+    if tipo:
+        query += ' AND tipo = ?'
+        params.append(tipo)
+
+    if inicio and fim:
+        query += ' AND data BETWEEN ? AND ?'
+        params.extend([inicio, fim])
+
+    cursor.execute(query, params)
+    transacoes = cursor.fetchall()
+    
+    result = ""
+    for transacao in transacoes:
+        result += f"ID: {transacao[0]}, Tipo: {transacao[1]}, Descrição: {transacao[2]}, Valor: R$ {transacao[3]:.2f}, Categoria: {transacao[4]}, Data: {transacao[5]}\n"
+
+    return result if result else "Nenhuma transação encontrada."
+
+def gerar_relatorio():
+    cursor.execute('SELECT SUM(valor) FROM transacoes WHERE tipo = "Receita"')
+    total_receitas = cursor.fetchone()[0] or 0
+
+    cursor.execute('SELECT SUM(valor) FROM transacoes WHERE tipo = "Despesa"')
+    total_despesas = cursor.fetchone()[0] or 0
+
+    saldo = total_receitas - total_despesas
+
+    return (f"Total de Receitas: R$ {total_receitas:.2f}\n"
+            f"Total de Despesas: R$ {total_despesas:.2f}\n"
+            f"Saldo: R$ {saldo:.2f}")
+
+def exportar_csv():
+    cursor.execute('SELECT * FROM transacoes')
+    transacoes = cursor.fetchall()
+
+    with open('relatorio_transacoes.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['ID', 'Tipo', 'Descrição', 'Valor', 'Categoria', 'Data'])
+        writer.writerows(transacoes)
+    
+    messagebox.showinfo("Exportação", "Relatório exportado com sucesso para relatorio_transacoes.csv")
+
+def adicionar_categoria():
+    nome = simpledialog.askstring("Nova Categoria", "Digite o nome da nova categoria:")
+    if nome:
+        cursor.execute('INSERT INTO categorias (nome) VALUES (?)', (nome,))
+        conn.commit()
+        messagebox.showinfo("Categoria Adicionada", "Categoria adicionada com sucesso!")
+
+def interface_grafica():
+    def registrar():
+        tipo = simpledialog.askstring("Tipo", "Tipo da transação (Receita/Despesa):")
+        descricao = simpledialog.askstring("Descrição", "Descrição da transação:")
+        valor = simpledialog.askfloat("Valor", "Valor da transação:")
+        categoria = simpledialog.askstring("Categoria", "Categoria da transação:")
+        if tipo and descricao and valor is not None:
+            registrar_transacao(tipo, descricao, valor, categoria)
+    
+    def visualizar():
+        tipo = simpledialog.askstring("Tipo", "Tipo de transação (Receita/Despesa) ou 'Todas':")
+        inicio = simpledialog.askstring("Data Inicial", "Data inicial (YYYY-MM-DD):")
+        fim = simpledialog.askstring("Data Final", "Data final (YYYY-MM-DD):")
+        resultado = visualizar_transacoes(tipo if tipo != 'Todas' else None, inicio, fim)
+        messagebox.showinfo("Transações", resultado)
+    
+    def relatorio():
+        resultado = gerar_relatorio()
+        messagebox.showinfo("Relatório", resultado)
+    
+    def exportar():
+        exportar_csv()
+
+    def adicionar_cat():
+        adicionar_categoria()
+
+    root = tk.Tk()
+    root.title("Sistema de Contabilidade")
+
+    tk.Button(root, text="Registrar Transação", command=registrar).pack(pady=5)
+    tk.Button(root, text="Visualizar Transações", command=visualizar).pack(pady=5)
+    tk.Button(root, text="Gerar Relatório", command=relatorio).pack(pady=5)
+    tk.Button(root, text="Exportar para CSV", command=exportar).pack(pady=5)
+    tk.Button(root, text="Adicionar Categoria", command=adicionar_cat).pack(pady=5)
+
+    root.mainloop()
+
+# Executar a interface gráfica
+interface_grafica()
+
+# Fechar a conexão com o banco de dados
+conn.close()
